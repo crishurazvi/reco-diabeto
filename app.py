@@ -455,16 +455,16 @@ with st.expander("Voir les détails de l'algorithme"):
 # 5. GÉNÉRATEUR DE PRÉSENTATION DE CAS (NOUVEAU)
 # ==========================================
 st.divider()
-st.subheader("🗣️ Assistant de Communication Clinique")
+st.subheader("🗣️ Demande un avis")
 
-if st.button("Générer la question pour le Diabétologue (SBAR)"):
+if st.button("Générer la question pour le Diabétologue"):
     
     # 1. Construction des listes de comorbidités (Positifs et Négatifs pertinents)
     comorbs_pos = []
     comorbs_neg = []
     
     if ascvd: comorbs_pos.append("ASCVD établi")
-    else: comorbs_neg.append("pas d'antécédent ASCVD")
+    else: comorbs_neg.append("sans atcds ASCVD")
     
     if hf: comorbs_pos.append("Insuffisance Cardiaque")
     else: comorbs_neg.append("pas d'IC connue")
@@ -499,9 +499,9 @@ if st.button("Générer la question pour le Diabétologue (SBAR)"):
 "Bonjour Docteur, j'aimerais votre avis sur un patient de {age} ans, IMC {bmi:.1f} kg/m².
 
 Concernant le terrain :
-- Il présente : {', '.join(comorbs_pos) if comorbs_pos else 'Aucune comorbidité cardio-rénale majeure'}.
-- À noter l'absence de : {', '.join(comorbs_neg)}.
-- Sur le plan aigu : {', '.join(red_flags_neg)}.
+- Il présente  {', '.join(comorbs_pos) if comorbs_pos else 'Aucune comorbidité cardio-rénale majeure'}.
+- À noter l'absence de  {', '.join(comorbs_neg)}.
+- Sur le plan aigu  {', '.join(red_flags_neg)}.
 
 Biologie actuelle : HbA1c à {hba1c}% (Cible {target_a1c}%) et eGFR à {egfr} ml/min.
 
@@ -511,5 +511,5 @@ Il est {meds_str}.
 Êtes-vous d'accord avec cette modification thérapeutique ?"
     """
 
-    st.info("💡 Lisez ce texte à votre sénior ou copiez-le dans le dossier :")
+    st.info("💡 Copiez ce texte dans le dossier :")
     st.code(texte_presentation, language="text")
