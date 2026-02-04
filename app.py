@@ -5,7 +5,7 @@ import pandas as pd
 # 0. CONFIGURATION & STYLE
 # ==========================================
 st.set_page_config(
-    page_title="Architecte Diabète ADA/EASD 2022",
+    page_title="Architecte Diabète ADA/EASD 2025",
     page_icon="🧬",
     layout="wide"
 )
@@ -22,20 +22,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-DISCLAIMER = "⚠️ **AIDE À LA DÉCISION CLINIQUE**: Algorithme basé sur le Rapport de Consensus ADA/EASD 2022. Ne remplace pas le jugement clinique."
+DISCLAIMER = "⚠️ **AIDE À LA DÉCISION CLINIQUE**: Algorithme basé sur les **Standards of Care ADA 2025**. Ne remplace pas le jugement clinique."
 
 # ==========================================
-# 1. CLASSES DE DÉFINITION (BASE DE CONNAISSANCES)
+# 1. CLASSES DE DÉFINITION (BASE DE CONNAISSANCES 2025)
 # ==========================================
-# Définitions basées sur le texte fourni (Table 1 & Texte)
 DRUG_CLASSES = {
     "Metformin": {"type": "Oral", "contra_egfr": 30, "warning_egfr": 45},
-    "SGLT2i": {"type": "Oral", "contra_egfr": 20, "benefit": ["HF", "CKD", "ASCVD"]},  # init >=20
-    "GLP1_RA": {"type": "Injectable", "contra_egfr": 15, "benefit": ["ASCVD", "Weight", "CKD_Secondary"]},
-    "GIP_GLP1": {"type": "Injectable", "contra_egfr": 15, "benefit": ["Weight++", "Glycemia++"]},  # Tirzepatide
+    "SGLT2i": {"type": "Oral", "contra_egfr": 20, "benefit": ["HF", "CKD", "ASCVD"]},  # Init >=20, continue until dialysis
+    "GLP1_RA": {"type": "Injectable", "contra_egfr": 15, "benefit": ["ASCVD", "Weight", "CKD_FLOW", "MASLD"]}, # Updated 2025: CKD & Liver
+    "GIP_GLP1": {"type": "Injectable", "contra_egfr": 15, "benefit": ["Weight+++", "Glycemia+++"]},  # Tirzepatide
     "DPP4i": {"type": "Oral", "contra_egfr": 0, "conflict": ["GLP1_RA", "GIP_GLP1"]},
     "SU": {"type": "Oral", "contra_egfr": 60, "risk": "Hypo"},
-    "TZD": {"type": "Oral", "contra": "HF"},
+    "TZD": {"type": "Oral", "contra": "HF", "benefit": ["MASLD"]}, # Updated 2025: Benefit in MASLD
     "Insulin_Basal": {"type": "Injectable", "risk": "Hypo"},
     "Insulin_Prandial": {"type": "Injectable", "risk": "Hypo"}
 }
@@ -44,7 +43,7 @@ DRUG_CLASSES = {
 # 2. UI - ENTRÉE DES DONNÉES (SIDEBAR)
 # ==========================================
 st.sidebar.title("🧬 Données Cliniques")
-st.sidebar.caption("Conforme au Consensus ADA/EASD 2022")
+st.sidebar.caption("Conforme aux Standards ADA/EASD 2025")
 
 st.sidebar.subheader("Profil Patient")
 c1, c2 = st.sidebar.columns(2)
@@ -60,12 +59,14 @@ target_a1c = st.sidebar.selectbox("Cible HbA1c", [6.5, 7.0, 7.5, 8.0], index=1)
 egfr = st.sidebar.number_input("eGFR (mL/min)", 5, 140, 45)
 acr = st.sidebar.selectbox("Albuminurie (uACR)", ["A1 Normal (<30 mg/g)", "A2 Micro (30-300 mg/g)", "A3 Macro (>300 mg/g)"])
 
-st.sidebar.subheader("Comorbidités (Cardio-rénal)")
+st.sidebar.subheader("Comorbidités (Cardio-rénal-Métabolique)")
 ascvd = st.sidebar.checkbox("ASCVD (IDM, AVC, AOMI)")
 hf = st.sidebar.checkbox("Insuffisance Cardiaque (IC)")
 ckd_dx = st.sidebar.checkbox("Diagnostic MRC (Maladie Rénale)")
 if acr != "A1 Normal (<30 mg/g)":
     ckd_dx = True
+# 2025 UPDATE: LIVER SCREENING
+masld = st.sidebar.checkbox("MASLD/MASH (Steatose/Fibrose hépatique)")
 
 st.sidebar.subheader("Sévérité / Drapeaux rouges")
 newly_dx = st.sidebar.checkbox("Diagnostic récent (<1 an)")
@@ -96,9 +97,9 @@ if st.sidebar.checkbox("Insuline Prandiale"):
     current_meds.append("Insulin_Prandial")
 
 # ==========================================
-# 3. MOTEUR DE DÉCISION
+# 3. MOTEUR DE DÉCISION (LOGIQUE 2025)
 # ==========================================
-def generate_plan(meds, hba1c, target, egfr, bmi, ascvd, hf, ckd, age, newly_dx, catabolic, ketosis, acute_illness, suspected_t1d):
+def generate_plan(meds, hba1c, target, egfr, bmi, ascvd, hf, ckd, masld, age, newly_dx, catabolic, ketosis, acute_illness, suspected_t1d):
     plan = []
     simulated_meds = meds.copy()
 
@@ -118,8 +119,8 @@ def generate_plan(meds, hba1c, target, egfr, bmi, ascvd, hf, ckd, age, newly_dx,
             plan.append({
                 "type": "STOP",
                 "text": "ARRÊTEZ le DPP-4i",
-                "reason": "Ne combinez pas DPP-4i avec GLP-1 RA ou GIP/GLP-1 RA (mécanismes similaires, bénéfice faible).",
-                "ref": "Consensus Report: Principles of Care"
+                "reason": "Redondance thérapeutique : Ne combinez pas DPP-4i avec GLP-1 RA ou GIP/GLP-1 RA.",
+                "ref": "ADA Standards 2025: Pharmacologic Therapy"
             })
             simulated_meds.remove("DPP4i")
 
@@ -131,245 +132,208 @@ def generate_plan(meds, hba1c, target, egfr, bmi, ascvd, hf, ckd, age, newly_dx,
             plan.append({
                 "type": "STOP",
                 "text": "ARRÊTEZ la Metformine",
-                "reason": "Contre-indication : eGFR < 30 ml/min.",
-                "ref": "Consensus Report: Table 1"
+                "reason": "Contre-indication absolue : eGFR < 30 ml/min.",
+                "ref": "ADA Standards: CKD"
             })
             simulated_meds.remove("Metformin")
         elif egfr < 45:
             plan.append({
                 "type": "ALERT",
-                "text": "Réduisez la dose de Metformine",
-                "reason": "Envisagez une réduction de dose si eGFR < 45.",
-                "ref": "Consensus Report: Other glucose-lowering medications"
+                "text": "Réduisez la dose de Metformine (Max 1g/j)",
+                "reason": "Prudence si eGFR < 45.",
+                "ref": "ADA Standards: CKD"
             })
 
-    # SGLT2i: NE PAS initier sous 20, mais NE PAS arrêter automatiquement si déjà initié et toléré
+    # SGLT2i Safety
     if "SGLT2i" in simulated_meds and egfr < 20:
         plan.append({
             "type": "ALERT",
-            "text": "NE PAS initier SGLT2i si eGFR < 20 ; si déjà en cours, poursuivre si toléré",
-            "reason": "L'initiation n'est pas recommandée si eGFR < 20. Si déjà initié, peut être continué pour le bénéfice cardio-rénal, si toléré.",
-            "ref": "ADA-KDIGO 2022 / Consensus"
+            "text": "SGLT2i : Ne pas initier si < 20, mais poursuivre si déjà toléré jusqu'à la dialyse",
+            "reason": "Pour la protection rénale/cardiaque, le traitement peut être continué malgré un eGFR bas (sauf intolérance).",
+            "ref": "ADA/KDIGO 2024-2025"
         })
-        # on ne le retire pas de la liste
 
     if "TZD" in simulated_meds and hf:
         plan.append({
             "type": "STOP",
             "text": "ARRÊTEZ TZD (Pioglitazone)",
-            "reason": "Risque de rétention hydrique et aggravation de l'IC.",
-            "ref": "Consensus Report: Thiazolidinediones"
+            "reason": "Contre-indication : Risque d'aggravation de l'Insuffisance Cardiaque.",
+            "ref": "ADA Standards: HF"
         })
         simulated_meds.remove("TZD")
 
-    # Redondance incrétinique
     stop_dpp4_if_incretin_present()
 
-    # Situations de sécurité où SGLT2i est temporairement évité (cétose/maladie aiguë)
+    # Règles "Sick Day"
     if "SGLT2i" in simulated_meds and (ketosis or acute_illness):
         plan.append({
             "type": "ALERT",
-            "text": "Envisagez une PAUSE temporaire du SGLT2i",
-            "reason": "En cas de maladie aiguë ou suspicion de cétose, risque accru d'acidocétose (DKA) ; réévaluer après stabilisation.",
-            "ref": "Consensus Report: Safety considerations"
+            "text": "PAUSE temporaire du SGLT2i (Risque Acidocétose)",
+            "reason": "Arrêt immédiat en cas de maladie aiguë, jeûne prolongé ou cétose. Reprendre quand stabilisé.",
+            "ref": "ADA Standards: Safety"
         })
 
     # -----------------------------------------------------
-    # ÉTAPE 2: DRAPEAUX ROUGES -> INSULINE (pas seulement HbA1c)
+    # ÉTAPE 2: DRAPEAUX ROUGES -> INSULINE
     # -----------------------------------------------------
     red_flags = suspected_t1d or ketosis or catabolic or acute_illness
     if red_flags:
         if "Insulin_Basal" not in simulated_meds:
             plan.append({
                 "type": "START",
-                "text": "INITIEZ l'Insuline Basale (prioritaire)",
-                "reason": "Drapeaux rouges (catabolisme/cétose/maladie aiguë/suspicion DT1) -> contrôle rapide et sûr ; ne pas attendre l'escalade thérapeutique.",
-                "ref": "Consensus Report: Place of Insulin"
+                "text": "INITIEZ l'Insuline Basale (URGENT)",
+                "reason": "Drapeaux rouges (catabolisme/cétose/suspi DT1) nécessitent l'insuline immédiate.",
+                "ref": "ADA Standards: Injectables"
             })
             simulated_meds.append("Insulin_Basal")
 
         stop_su_if_present(
-            reason="À l'initiation de l'insuline, les SU augmentent considérablement le risque d'hypoglycémie.",
-            ref="Consensus Report: Hypoglycemia risk / Place of Insulin"
+            reason="Risque majeur d'hypoglycémie à l'initiation de l'insuline.",
+            ref="ADA Standards: Hypoglycemia"
         )
-
-        if hba1c >= 10 and "Insulin_Prandial" not in simulated_meds:
+        # On arrête ici l'algo pour les cas aigus graves
+    
+    # -----------------------------------------------------
+    # ÉTAPE 3: PROTECTION D'ORGANE (PRIORITÉ 2025)
+    # -----------------------------------------------------
+    if not red_flags:
+        # A. INSUFFISANCE CARDIAQUE (HF) -> SGLT2i Roi
+        if hf and "SGLT2i" not in simulated_meds and egfr >= 20:
             plan.append({
                 "type": "START",
-                "text": "Envisagez une intensification rapide (± insuline prandiale)",
-                "reason": "Hyperglycémie sévère + drapeaux rouges : peut nécessiter un régime plus intensif initialement.",
-                "ref": "Consensus Report: Severe hyperglycemia"
+                "text": "INITIEZ SGLT2i (Dapa/Empa/Sota)",
+                "reason": "Pilier du traitement de l'IC (FE réduite ou préservée).",
+                "ref": "ADA Standards 2025: HF"
             })
+            simulated_meds.append("SGLT2i")
 
-    # -----------------------------------------------------
-    # ÉTAPE 3: PROTECTION D'ORGANE (indépendant de A1c/metformine)
-    # -----------------------------------------------------
-    if hf and "SGLT2i" not in simulated_meds and egfr >= 20 and (not ketosis) and (not acute_illness):
-        plan.append({
-            "type": "START",
-            "text": "INITIEZ SGLT2i (Dapa/Empa)",
-            "reason": "Bénéfice prouvé pour réduire les hospitalisations IC et la mortalité CV dans l'IC.",
-            "ref": "Consensus Rec: People with HF"
-        })
-        simulated_meds.append("SGLT2i")
-
-    if ckd and "SGLT2i" not in simulated_meds and egfr >= 20 and (not ketosis) and (not acute_illness):
-        plan.append({
-            "type": "START",
-            "text": "INITIEZ SGLT2i",
-            "reason": "Préféré pour ralentir la progression de la MRC et réduire les hospitalisations IC.",
-            "ref": "Consensus Rec: People with CKD"
-        })
-        simulated_meds.append("SGLT2i")
-
-    if ckd and "SGLT2i" not in simulated_meds and egfr < 20:
-        if "GLP1_RA" not in simulated_meds and "GIP_GLP1" not in simulated_meds:
-            plan.append({
-                "type": "START",
-                "text": "INITIEZ GLP-1 RA",
-                "reason": "Alternative lorsque le SGLT2i ne peut pas être initié (eGFR < 20).",
-                "ref": "Consensus Rec: CKD alternative"
-            })
-            simulated_meds.append("GLP1_RA")
-            stop_dpp4_if_incretin_present()
-
-    # ASCVD: strict 2022 -> considère “proven CV benefit” uniquement SGLT2i ou GLP-1 RA (pas GIP/GLP1 automatiquement)
-    if ascvd:
-        has_protection_strict = ("SGLT2i" in simulated_meds) or ("GLP1_RA" in simulated_meds)
-
-        # Si sous GIP/GLP1 mais sans SGLT2i ou GLP1_RA, préférer SGLT2i (si éligible) plutôt que d'ajouter GLP1 par dessus
-        if (not has_protection_strict) and ("GIP_GLP1" in simulated_meds):
-            if ("SGLT2i" not in simulated_meds) and egfr >= 20 and (not ketosis) and (not acute_illness):
+        # B. MALADIE RÉNALE (CKD) -> 2025 UPDATE: SGLT2i AND/OR GLP-1 (FLOW Trial)
+        if ckd:
+            # 1. SGLT2i First
+            if "SGLT2i" not in simulated_meds and egfr >= 20:
                 plan.append({
                     "type": "START",
-                    "text": "INITIEZ SGLT2i (pour protection CV avec ASCVD)",
-                    "reason": "Dans l'algorithme strict 2022, le bénéfice CV prouvé concerne SGLT2i/GLP-1 RA. Évitez le doublon incrétinique.",
-                    "ref": "Consensus Rec: People with established CVD"
+                    "text": "INITIEZ SGLT2i (Protection Rénale)",
+                    "reason": "Ralentit la progression de la MRC et réduit le risque CV.",
+                    "ref": "ADA Standards 2025: CKD"
                 })
                 simulated_meds.append("SGLT2i")
-            elif "GLP1_RA" not in simulated_meds:
+            
+            # 2. GLP-1 RA (Semaglutide) Second or Combined - NOUVEAU 2025
+            if ("GLP1_RA" not in simulated_meds and "GIP_GLP1" not in simulated_meds):
+                reason_ckd = "Alternative au SGLT2i si intolérance OU thérapie combinée pour protection rénale additionnelle (Étude FLOW)."
+                if "SGLT2i" in simulated_meds:
+                    reason_ckd = "Envisagez l'ajout de GLP-1 RA (Semaglutide) pour renforcer la protection rénale (Étude FLOW)."
+                
                 plan.append({
-                    "type": "ALERT",
-                    "text": "Envisagez le passage à un GLP-1 RA avec bénéfice CV prouvé",
-                    "reason": "Si le SGLT2i ne peut pas être initié, pour l'ASCVD, l'algorithme 2022 favorise les GLP-1 RA avec bénéfices CV prouvés.",
-                    "ref": "Consensus Rec: People with established CVD"
+                    "type": "START",
+                    "text": "Envisagez GLP-1 RA (Semaglutide)",
+                    "reason": reason_ckd,
+                    "ref": "ADA Standards 2025 / FLOW Trial"
                 })
+                # On l'ajoute virtuellement pour la suite
+                # simulated_meds.append("GLP1_RA") 
 
-        if not has_protection_strict and ("GIP_GLP1" not in simulated_meds):
-            plan.append({
-                "type": "START",
-                "text": "INITIEZ GLP-1 RA ou SGLT2i",
-                "reason": "ASCVD -> agent avec bénéfice CV prouvé, indépendant de l'HbA1c.",
-                "ref": "Consensus Rec: People with established CVD"
-            })
-            if (egfr >= 20) and (bmi <= 27) and (not ketosis) and (not acute_illness):
-                simulated_meds.append("SGLT2i")
-            else:
-                simulated_meds.append("GLP1_RA")
-                stop_dpp4_if_incretin_present()
+        # C. ASCVD (Cardio)
+        if ascvd:
+            has_protection = ("SGLT2i" in simulated_meds) or ("GLP1_RA" in simulated_meds)
+            if not has_protection:
+                plan.append({
+                    "type": "START",
+                    "text": "INITIEZ GLP-1 RA ou SGLT2i",
+                    "reason": "Bénéfice MACE prouvé (IDM/AVC/Décès CV) indépendant de l'HbA1c.",
+                    "ref": "ADA Standards 2025: ASCVD"
+                })
+                if bmi > 27:
+                    simulated_meds.append("GLP1_RA")
+                    stop_dpp4_if_incretin_present()
+                else:
+                    simulated_meds.append("SGLT2i")
+
+        # D. MASLD / FOIE (NOUVEAU 2025)
+        if masld and not hf:
+             has_liver_drug = ("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds) or ("TZD" in simulated_meds)
+             if not has_liver_drug:
+                 plan.append({
+                    "type": "START",
+                    "text": "Envisagez GLP-1 RA ou Pioglitazone",
+                    "reason": "MASLD : Les agonistes GLP-1 ou la Pioglitazone ont un bénéfice histologique prouvé sur la stéatohépatite.",
+                    "ref": "ADA Standards 2025: MASLD"
+                 })
 
     # -----------------------------------------------------
-    # ÉTAPE 4: INTENSIFICATION GLYCÉMIQUE & PONDÉRALE
+    # ÉTAPE 4: GESTION DU POIDS & GLYCÉMIE (HIERARCHIE 2025)
     # -----------------------------------------------------
     gap = hba1c - target
+    
+    # Gestion du POIDS comme cible primaire (2025)
+    has_weight_drug = ("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds)
+    if bmi >= 30 and not has_weight_drug and not red_flags:
+        drug_choice = "GIP/GLP-1 RA (Tirzépatide)"
+        reason_weight = "Efficacité pondérale très élevée (supérieure au GLP-1 seul)."
+        
+        plan.append({
+            "type": "START",
+            "text": f"INITIEZ {drug_choice}",
+            "reason": f"Obésité : La gestion du poids est un objectif co-primaire. {reason_weight}",
+            "ref": "ADA Standards 2025: Obesity"
+        })
+        simulated_meds.append("GIP_GLP1")
+        stop_dpp4_if_incretin_present()
 
-    if gap > 0:
-        # Combo précoce : lié à un écart important et un diagnostic récent
-        if newly_dx and gap >= 1.5:
-            plan.append({
-                "type": "START",
-                "text": "Envisagez une Thérapie Combinée Précoce",
-                "reason": "Diagnostic récent et HbA1c très au-dessus de la cible (≥1.5%), la combinaison initiale peut être supérieure.",
-                "ref": "Consensus Report: Early combination / VERIFY"
-            })
-
-        # Metformine comme base si éligible
+    # Gestion de la GLYCÉMIE (si écart persistant)
+    if gap > 0 and not red_flags:
+        # 1. Metformine Base
         if "Metformin" not in simulated_meds and egfr >= 30:
-            plan.append({
+             plan.append({
                 "type": "START",
                 "text": "AJOUTEZ la Metformine",
-                "reason": "Bonne efficacité, coût réduit, vaste expérience.",
-                "ref": "Consensus Report: Other medications"
+                "reason": "Traitement de fond efficace et sûr.",
+                "ref": "ADA Standards 2025"
             })
-            simulated_meds.append("Metformin")
+             simulated_meds.append("Metformin")
 
-        # Poids comme cible primaire
-        has_weight_drug = ("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds) or ("SGLT2i" in simulated_meds)
-        if bmi >= 30 and not has_weight_drug:
-            plan.append({
-                "type": "START",
-                "text": "AJOUTEZ GLP-1 RA ou GIP/GLP-1 RA",
-                "reason": "L'obésité est une cible primaire ; les agents incrétiniques ont une grande efficacité sur le poids et l'HbA1c.",
-                "ref": "Consensus Report: Weight management"
-            })
-            simulated_meds.append("GIP_GLP1")
-            stop_dpp4_if_incretin_present()
-
-        # Switch DPP-4i -> GLP-1 si existe encore et besoin d'intensification
+        # 2. Switch DPP-4 -> Incretin plus puissant
         if "DPP4i" in simulated_meds and gap > 0.5:
-            plan.append({
+             plan.append({
                 "type": "SWITCH",
-                "text": "REMPLACEZ DPP-4i par GLP-1 RA",
-                "reason": "Le DPP-4i a une efficacité modeste ; le GLP-1 RA a une efficacité supérieure et des bénéfices additionnels.",
-                "ref": "Consensus Report: Comparative efficacy"
-            })
-            simulated_meds.remove("DPP4i")
-            if "GLP1_RA" not in simulated_meds and "GIP_GLP1" not in simulated_meds:
-                simulated_meds.append("GLP1_RA")
+                "text": "REMPLACEZ DPP-4i par GIP/GLP-1 ou GLP-1 RA",
+                "reason": "Le DPP-4i est peu puissant. Passage à un injectable pour efficacité glycémique majeure.",
+                "ref": "ADA Standards 2025"
+             })
+             simulated_meds.remove("DPP4i")
+             simulated_meds.append("GIP_GLP1")
 
-        # GLP-1 avant l'insuline (si pas de drapeaux rouges et HbA1c non extrême)
-        has_incretin = ("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds)
-        if (not red_flags) and ("Insulin_Basal" not in simulated_meds) and (not has_incretin):
-            if hba1c < 10:
+        # 3. Positionnement Insuline
+        has_potent_injectable = ("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds)
+        if "Insulin_Basal" not in simulated_meds:
+            if not has_potent_injectable:
                 plan.append({
                     "type": "START",
-                    "text": "INITIEZ GLP-1 RA (avant l'Insuline)",
-                    "reason": "Avant l'insuline basale : bonne efficacité, pas d'hypoglycémie, perte de poids.",
-                    "ref": "Consensus Report: Place of Insulin"
+                    "text": "INITIEZ GLP-1 RA / GIP-GLP1 (avant Insuline)",
+                    "reason": "L'insuline ne doit être considérée qu'après échec des incrétino-mimétiques (sauf signes cataboliques).",
+                    "ref": "ADA Standards 2025: Injectables"
                 })
                 simulated_meds.append("GLP1_RA")
-                stop_dpp4_if_incretin_present()
             else:
-                plan.append({
-                    "type": "START",
-                    "text": "INITIEZ l'Insuline Basale (+ envisagez GLP-1 RA)",
-                    "reason": "Une hyperglycémie sévère (HbA1c ≥10%) peut nécessiter de l'insuline.",
-                    "ref": "Consensus Report: Severe hyperglycemia / Place of Insulin"
-                })
-                simulated_meds.append("Insulin_Basal")
-                stop_su_if_present(
-                    reason="À l'initiation de l'insuline, les SU augmentent considérablement le risque d'hypoglycémie.",
-                    ref="Consensus Report: Hypoglycemia risk / Place of Insulin"
-                )
-
-        # Si a déjà un incrétin et est toujours au-dessus de la cible -> ajouter insuline basale
-        if (("GLP1_RA" in simulated_meds) or ("GIP_GLP1" in simulated_meds)) and (gap > 0):
-            if "Insulin_Basal" not in simulated_meds:
+                # Echec sous GLP-1/GIP-GLP1 -> Insuline
                 plan.append({
                     "type": "START",
                     "text": "INITIEZ l'Insuline Basale",
-                    "reason": "Persistance au-dessus de la cible sous thérapie non-insulinique optimisée.",
-                    "ref": "Consensus Report: Fig 5"
+                    "reason": "Échec thérapeutique sous traitement non-insulinique optimisé.",
+                    "ref": "ADA Standards 2025"
                 })
                 simulated_meds.append("Insulin_Basal")
-                stop_su_if_present(
-                    reason="À l'initiation de l'insuline, les SU augmentent considérablement le risque d'hypoglycémie.",
-                    ref="Consensus Report: Hypoglycemia risk / Place of Insulin"
-                )
+                stop_su_if_present("Risque Hypo", "ADA 2025")
 
-        # Si a déjà basale et est toujours au-dessus de la cible -> prandiale
-        if ("Insulin_Basal" in simulated_meds) and (gap > 0) and ("Insulin_Prandial" not in simulated_meds):
-            plan.append({
+        # 4. Intensification Insuline
+        if "Insulin_Basal" in simulated_meds and "Insulin_Prandial" not in simulated_meds:
+             plan.append({
                 "type": "START",
-                "text": "AJOUTEZ de l'Insuline Prandiale",
-                "reason": "Échec sous insuline basale (besoin d'intensification).",
-                "ref": "Consensus Report: Insulin intensification"
-            })
-            simulated_meds.append("Insulin_Prandial")
-            stop_su_if_present(
-                reason="SU + insuline prandiale augmentent fortement le risque d'hypoglycémie.",
-                ref="Consensus Report: Hypoglycemia risk"
-            )
+                "text": "AJOUTEZ Insuline Prandiale ou iGLP-1",
+                "reason": "Intensification nécessaire.",
+                "ref": "ADA Standards 2025"
+             })
 
     return plan
 
@@ -377,7 +341,7 @@ def generate_plan(meds, hba1c, target, egfr, bmi, ascvd, hf, ckd, age, newly_dx,
 # 4. AFFICHAGE DES RÉSULTATS
 # ==========================================
 plan_actions = generate_plan(
-    current_meds, hba1c, target_a1c, egfr, bmi, ascvd, hf, ckd_dx, age,
+    current_meds, hba1c, target_a1c, egfr, bmi, ascvd, hf, ckd_dx, masld, age,
     newly_dx, catabolic, ketosis, acute_illness, suspected_t1d
 )
 
@@ -386,13 +350,13 @@ st.divider()
 col_main, col_detail = st.columns([1.5, 1])
 
 with col_main:
-    st.header("📋 Plan d'Action Personnalisé")
+    st.header("📋 Plan d'Action (ADA 2025)")
     st.markdown(DISCLAIMER)
 
     if not plan_actions and hba1c <= target_a1c:
-        st.success("✅ Le patient est à la cible et sous traitement optimisé pour la protection des organes.")
+        st.success("✅ Patient à la cible et sous traitement cardio-rénal optimisé.")
     elif not plan_actions and hba1c > target_a1c:
-        st.warning("⚠️ Cas réfractaire. Options standard épuisées. Évaluation par spécialiste pour pompes/technologies avancées.")
+        st.warning("⚠️ Cas complexe/réfractaire. Avis spécialisé requis (Pompes, Greffe, etc.).")
 
     for item in plan_actions:
         icon = ""
@@ -419,97 +383,64 @@ with col_main:
         """, unsafe_allow_html=True)
 
 with col_detail:
-    st.subheader("Résumé Clinique & Phénotype")
+    st.subheader("Phénotype Clinique")
     st.metric("Glycémie (HbA1c)", f"{hba1c}%", delta=f"{hba1c-target_a1c:.1f}% vs Cible", delta_color="inverse")
 
-    st.markdown("**Statut Organe :**")
+    st.markdown("**Priorités Organiques :**")
     if hf:
-        st.warning("Insuffisance Cardiaque (Priorité SGLT2i)")
+        st.error("Insuffisance Cardiaque (Priorité Absolue SGLT2i)")
     elif ckd_dx:
-        st.warning("Maladie Rénale (Priorité SGLT2i)")
+        st.error("Maladie Rénale (Priorité SGLT2i + GLP-1/FLOW)")
     elif ascvd:
         st.warning("ASCVD (Priorité GLP-1/SGLT2i)")
+    elif masld:
+        st.info("Foie/MASLD (Priorité GLP-1/Pioglitazone)")
     else:
-        st.success("Pas de maladie cardio-rénale établie")
-
-    if age < 40:
-        st.info("ℹ️ Patient Jeune (<40 ans) : Risque accru de complications à long terme. Agressivité thérapeutique nécessaire.")
+        st.success("Pas de comorbidité majeure déclarée")
 
     if bmi > 30:
-        st.info("ℹ️ Obésité : La gestion du poids est une cible primaire (Tirzépatide/Sémaglutide).")
-
-    if suspected_t1d or ketosis or catabolic or acute_illness:
-        st.warning("⚠️ Drapeaux rouges présents : peut nécessiter de l'insuline précocement et une évaluation rapide.")
+        st.info("ℹ️ Obésité : Gestion du poids prioritaire (Tirzépatide).")
 
 st.divider()
-st.markdown("### 📚 Logique extraite du Consensus ADA/EASD 2022")
-with st.expander("Voir les détails de l'algorithme"):
+st.markdown("### 📚 Nouveautés ADA 2024-2025 intégrées")
+with st.expander("Voir les détails des mises à jour"):
     st.markdown("""
-    1.  **Sécurité d'abord (Safety First) :** Arrêt de la Metformine si eGFR < 30 ; réduire la dose si eGFR < 45. Pour les SGLT2i, ne pas initier sous eGFR 20, mais ne pas arrêter automatiquement si déjà initié et toléré.
-    2.  **Protection d'Organe :** Ajout des agents prouvés (SGLT2i, GLP-1 RA) indépendant de l'HbA1c ou de l'utilisation de Metformine, en cas d'IC, MRC ou ASCVD.
-    3.  **Tirzépatide (Nouveau) :** Le texte met en évidence le Tirzépatide (GIP/GLP-1) comme ayant une efficacité supérieure sur la glycémie et le poids par rapport au GLP-1 RA classique.
-    4.  **Positionnement de l'Insuline :** L'algorithme force l'évaluation du GLP-1 RA avant de passer à l'insuline, sauf situations avec drapeaux rouges (cétose, catabolisme, maladie aiguë, suspicion DT1).
-    5.  **Dé-prescription :** Identification des redondances (DPP-4i + GLP-1/GIP-GLP-1) et arrêt de ces molécules. Lors de l'initiation de l'insuline, l'arrêt des SU est recommandé pour réduire l'hypoglycémie.
+    1.  **Rein (Étude FLOW) :** Le Sémaglutide a démontré une protection rénale majeure. Il est désormais recommandé en association avec les SGLT2i pour la MRC.
+    2.  **Gestion du Poids :** Le poids est un objectif co-primaire. Le Tirzépatide (GIP/GLP-1) est mis en avant pour sa puissance supérieure.
+    3.  **Foie (MASLD) :** Dépistage recommandé (FIB-4). Traitement par GLP-1 RA ou Pioglitazone si risque de fibrose.
+    4.  **SGLT2i et eGFR :** Initiation possible jusqu'à eGFR 20, poursuite jusqu'à la dialyse.
     """)
+
 # ==========================================
-# 5. GÉNÉRATEUR DE PRÉSENTATION DE CAS (NOUVEAU)
+# 5. GÉNÉRATEUR DE PRÉSENTATION DE CAS (2025)
 # ==========================================
 st.divider()
-st.subheader("🗣️ Demande un avis")
+st.subheader("🗣️ Demande d'avis spécialisé")
 
-if st.button("Générer la question pour le Diabétologue"):
+if st.button("Générer la lettre"):
     
-    # 1. Construction des listes de comorbidités (Positifs et Négatifs pertinents)
     comorbs_pos = []
-    comorbs_neg = []
-    
-    if ascvd: comorbs_pos.append("ASCVD établi")
-    else: comorbs_neg.append("sans atcds ASCVD")
-    
+    if ascvd: comorbs_pos.append("ASCVD")
     if hf: comorbs_pos.append("Insuffisance Cardiaque")
-    else: comorbs_neg.append("pas d'IC connue")
-    
     if ckd_dx: comorbs_pos.append(f"MRC (eGFR {egfr})")
-    else: comorbs_neg.append(f"fonction rénale conservée (eGFR {egfr})")
-
-    # 2. Drapeaux rouges (Négatifs pertinents)
-    red_flags_neg = []
-    if not ketosis: red_flags_neg.append("pas de cétose")
-    if not catabolic: red_flags_neg.append("pas de signes cataboliques")
-    if not acute_illness: red_flags_neg.append("cliniquement stable")
-
-    # 3. Traitement actuel formaté
-    if not current_meds:
-        meds_str = "naïf de traitement antidiabétique"
-    else:
-        meds_str = f"actuellement sous {', '.join(current_meds)}"
-
-    # 4. Synthèse des recommandations de l'algorithme
+    if masld: comorbs_pos.append("Risque hépatique (MASLD)")
+    
+    meds_str = f"sous {', '.join(current_meds)}" if current_meds else "naïf de traitement"
     recos = [item['text'] for item in plan_actions if item['type'] in ['START', 'STOP', 'SWITCH']]
-    if not recos:
-        if hba1c <= target_a1c:
-            proposition = "Le patient est à la cible, je propose de maintenir le traitement actuel."
-        else:
-            proposition = "Le patient n'est pas à la cible mais les options standard semblent épuisées. Quelle est votre conduite à tenir ?"
-    else:
-        proposition = f"Conformément aux recommandations, je pensais : {'; '.join(recos)}."
+    
+    proposition = f"Je propose : {'; '.join(recos)}." if recos else "Je sollicite votre expertise."
 
-    # 5. Construction du texte final
     texte_presentation = f"""
-"Bonjour Docteur, j'aimerais votre avis sur un patient de {age} ans, IMC {bmi:.1f} kg/m².
+"Cher Confrère, avis sur patient de {age} ans, IMC {bmi:.1f}.
 
-Concernant le terrain :
-- Il présente  {', '.join(comorbs_pos) if comorbs_pos else 'Aucune comorbidité cardio-rénale majeure'}.
-- À noter l'absence de  {', '.join(comorbs_neg)}.
-- Sur le plan aigu  {', '.join(red_flags_neg)}.
+Contexte Cardio-Rénal-Métabolique :
+- {', '.join(comorbs_pos) if comorbs_pos else 'Pas de comorbidité majeure'}.
+- HbA1c {hba1c}% (eGFR {egfr}).
 
-Biologie actuelle : HbA1c à {hba1c}% (Cible {target_a1c}%) et eGFR à {egfr} ml/min.
+Actuellement {meds_str}.
 
-Il est {meds_str}.
-
-{proposition}
-Êtes-vous d'accord avec cette modification thérapeutique ?"
+Conformément aux standards ADA 2025 (FLOW/Poids/MASLD), {proposition}
+Merci."
     """
-
-    st.info("💡 Copiez ce texte dans le dossier :")
+    st.info("💡 Copiez ce texte :")
     st.code(texte_presentation, language="text")
